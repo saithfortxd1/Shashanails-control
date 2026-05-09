@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --font-body: "Outfit", sans-serif;
+  --font-display: "Playfair Display", serif;
+  
+  --color-brand-blush: #fdf2f4;
+  --color-brand-fuchsia: #c2185b;
+  --color-brand-gold: #d4af37;
+  --color-brand-ink: #2d2d2d;
+  --color-brand-glass: rgba(255, 255, 255, 0.7);
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+  background-color: var(--color-brand-blush);
+  color: var(--color-brand-ink);
+  font-family: var(--font-body);
+}

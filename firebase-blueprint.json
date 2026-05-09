@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "debt": {
+      "title": "Debt",
+      "description": "Represents a client's debt",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "concept": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid"] },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "paidAt": { "type": ["number", "null"] }
+      },
+      "required": ["clientId", "clientName", "concept", "amount", "status", "ownerId", "createdAt"]
+    },
+    "client": {
+      "title": "Client",
+      "description": "Represents a client of Shasha Nails",
+      "type": "object",
+      "properties": {
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "phone": { "type": "string" },
+        "notes": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["firstName", "lastName", "phone", "ownerId", "createdAt", "updatedAt"]
+    },
+    "appointment": {
+      "title": "Appointment",
+      "description": "Represents an appointment at Shasha Nails",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "date": { "type": "number" },
+        "service": { "type": "string" },
+        "price": { "type": "number" },
+        "locationType": { "type": "string", "enum": ["Presencial", "Domicilio"] },
+        "address": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled"] },
+        "notified60": { "type": "boolean" },
+        "notified30": { "type": "boolean" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["clientId", "clientName", "date", "service", "price", "locationType", "status", "ownerId", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "debts/{debtId}": {
+      "schema": { "$ref": "#/entities/debt" },
+      "description": "Stores client debts"
+    },
+    "clients/{clientId}": {
+      "schema": { "$ref": "#/entities/client" },
+      "description": "Stores client records"
+    },
+    "appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/appointment" },
+      "description": "Stores appointment records"
+    }
+  }
+}

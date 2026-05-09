@@ -1,0 +1,16 @@
+{
+  "name": "Shasha Nails",
+  "short_name": "Shasha",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#fff1f2",
+  "theme_color": "#d946ef",
+  "description": "App de citas para Shasha Nails",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
