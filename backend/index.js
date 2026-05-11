@@ -36,7 +36,9 @@ try {
   process.exit(1); // Detener el servidor si no hay conexión a la base de datos
 }
 
-const db = admin.firestore();
+import { getFirestore } from 'firebase-admin/firestore';
+
+const db = getFirestore('ai-studio-1dab9ad9-be83-460e-937c-58e9416c0ed3');
 
 // Endpoint de prueba (Health Check). Obligatorio para que Render mantenga vivo el servicio web gratuito.
 app.get('/', (req, res) => {
