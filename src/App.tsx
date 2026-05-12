@@ -18,7 +18,7 @@ function getSubscriptionStatus(user: AppUser | null): 'Activa' | 'Pendiente' | '
   }
   
   const now = new Date();
-  const cutoffStart = new Date('2026-05-12T00:00:00');
+  const cutoffStart = new Date('2026-05-14T00:00:00');
   
   if (now < cutoffStart) return 'Activa';
 
@@ -26,8 +26,8 @@ function getSubscriptionStatus(user: AppUser | null): 'Activa' | 'Pendiente' | '
   if (user.ultimoMesPagado === currentMonthStr) return 'Activa';
   
   const day = now.getDate();
-  if (day < 10) return 'Activa';
-  if (day >= 10 && day <= 12) return 'Pendiente'; // Reminder days
+  if (day < 12) return 'Activa';
+  if (day >= 12 && day <= 14) return 'Pendiente'; // Reminder days
   return 'Suspendida';
 }
 
@@ -1704,7 +1704,7 @@ function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
       {userProfile && userProfile.email !== 'saith.martinez7@gmail.com' && (() => {
         const status = getSubscriptionStatus(userProfile);
         const currentMonthStr = format(new Date(), 'yyyy-MM');
-        const showRenewBtn = status !== 'Activa' || (userProfile.ultimoMesPagado !== currentMonthStr && new Date().getDate() >= 10);
+        const showRenewBtn = status !== 'Activa' || (userProfile.ultimoMesPagado !== currentMonthStr && new Date().getDate() >= 12);
         return (
           <div className="bg-[#fafafa] rounded-[16px] p-6 border border-[#eee] space-y-4">
             <div className="flex items-center justify-between mb-2">
