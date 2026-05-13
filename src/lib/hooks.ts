@@ -67,11 +67,11 @@ export function useClients() {
       }
       const q = query(
         collection(db, 'clients'), 
-        where("ownerId", "==", user.uid),
-        orderBy('firstName', 'asc')
+        where("ownerId", "==", user.uid)
       );
       const unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+        data.sort((a, b) => a.firstName.localeCompare(b.firstName));
         setClients(data);
       }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
       
@@ -95,11 +95,11 @@ export function useAppointments() {
       }
       const q = query(
         collection(db, 'appointments'), 
-        where("ownerId", "==", user.uid),
-        orderBy('date', 'asc')
+        where("ownerId", "==", user.uid)
       );
       const unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
+        data.sort((a, b) => a.date - b.date);
         setAppointments(data);
       }, (err) => handleFirestoreError(err, OperationType.LIST, 'appointments'));
       
@@ -123,11 +123,11 @@ export function useDebts() {
       }
       const q = query(
         collection(db, 'debts'), 
-        where("ownerId", "==", user.uid),
-        orderBy('createdAt', 'desc')
+        where("ownerId", "==", user.uid)
       );
       const unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Debt));
+        data.sort((a, b) => b.createdAt - a.createdAt);
         setDebts(data);
       }, (err) => handleFirestoreError(err, OperationType.LIST, 'debts'));
       
@@ -157,11 +157,11 @@ export function useFrequentServices() {
       }
       const q = query(
         collection(db, 'frequentServices'),
-        where("ownerId", "==", user.uid),
-        orderBy('name', 'asc')
+        where("ownerId", "==", user.uid)
       );
       const unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as FrequentService));
+        data.sort((a, b) => a.name.localeCompare(b.name));
         setServices(data);
       }, (err) => handleFirestoreError(err, OperationType.LIST, 'frequentServices'));
       
