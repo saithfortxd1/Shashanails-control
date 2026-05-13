@@ -60,17 +60,25 @@ export function useClients() {
   const [clients, setClients] = useState<Client[]>([]);
   
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(
-      collection(db, 'clients'), 
-      where("ownerId", "==", auth.currentUser.uid),
-      orderBy('firstName', 'asc')
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
-      setClients(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
-    return unsub;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setClients([]);
+        return;
+      }
+      const q = query(
+        collection(db, 'clients'), 
+        where("ownerId", "==", user.uid),
+        orderBy('firstName', 'asc')
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+        setClients(data);
+      }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
+      
+      return () => unsub();
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   return clients;
@@ -80,17 +88,25 @@ export function useAppointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(
-      collection(db, 'appointments'), 
-      where("ownerId", "==", auth.currentUser.uid),
-      orderBy('date', 'asc')
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
-      setAppointments(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'appointments'));
-    return unsub;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setAppointments([]);
+        return;
+      }
+      const q = query(
+        collection(db, 'appointments'), 
+        where("ownerId", "==", user.uid),
+        orderBy('date', 'asc')
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
+        setAppointments(data);
+      }, (err) => handleFirestoreError(err, OperationType.LIST, 'appointments'));
+      
+      return () => unsub();
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   return appointments;
@@ -100,17 +116,25 @@ export function useDebts() {
   const [debts, setDebts] = useState<Debt[]>([]);
   
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(
-      collection(db, 'debts'), 
-      where("ownerId", "==", auth.currentUser.uid),
-      orderBy('createdAt', 'desc')
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Debt));
-      setDebts(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'debts'));
-    return unsub;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setDebts([]);
+        return;
+      }
+      const q = query(
+        collection(db, 'debts'), 
+        where("ownerId", "==", user.uid),
+        orderBy('createdAt', 'desc')
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Debt));
+        setDebts(data);
+      }, (err) => handleFirestoreError(err, OperationType.LIST, 'debts'));
+      
+      return () => unsub();
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   return debts;
@@ -126,17 +150,25 @@ export function useFrequentServices() {
   const [services, setServices] = useState<FrequentService[]>([]);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(
-      collection(db, 'frequentServices'),
-      where("ownerId", "==", auth.currentUser.uid),
-      orderBy('name', 'asc')
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as FrequentService));
-      setServices(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'frequentServices'));
-    return unsub;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setServices([]);
+        return;
+      }
+      const q = query(
+        collection(db, 'frequentServices'),
+        where("ownerId", "==", user.uid),
+        orderBy('name', 'asc')
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as FrequentService));
+        setServices(data);
+      }, (err) => handleFirestoreError(err, OperationType.LIST, 'frequentServices'));
+      
+      return () => unsub();
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   return services;
