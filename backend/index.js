@@ -55,7 +55,7 @@ app.listen(PORT, () => {
 
 // Función de reconexión y monitoreo (Cron Job)
 function startCronJob() {
-  console.log("⏱️ Iniciando ciclo de monitoreo de citas (cada 1 min)...");
+  console.log("⏱️ Iniciando ciclo de monitoreo de citas (cada 10 min)...");
   
   setInterval(async () => {
     try {
@@ -90,23 +90,32 @@ function startCronJob() {
           const userDoc = await db.collection('users').doc(appointment.ownerId).get();
           const userData = userDoc.data();
 
-          if (userData && userData.pushSubscription) {
-            const payload = JSON.stringify({
-              title: 'Shasha Nails Recordatorio',
-              body: `Cita con ${appointment.clientName} en ${minutesLeft} minutos.`,
+          if (!userDoc.exists || !userData || !userData.pushSubscription) {
+            console.log(`⚠️ Admin no tiene suscripción push para cita: ${doc.id}`);
+            // Marcar como notificado de todas formas para no entrar en un bucle infinito de lecturas
+            await db.collection('appointments').doc(doc.id).update({
+              [fieldToUpdate]: true,
+              updatedAt: Date.now()
             });
+            continue;
+          }
 
-            // Enviar la notificación PUSH
-            try {
-              await webpush.sendNotification(userData.pushSubscription, payload);
-              console.log(`✅ Push enviado (${minutesLeft}m) para cita: ${doc.id}`);
-              
-              // Marcar en la BD para evitar duplicados absolutos
-              await db.collection('appointments').doc(doc.id).update({
-                [fieldToUpdate]: true,
-                updatedAt: Date.now()
-              });
-            } catch (err) {
+          const payload = JSON.stringify({
+            title: 'Shasha Nails Recordatorio',
+            body: `Cita con ${appointment.clientName} en ${minutesLeft} minutos.`,
+          });
+
+          // Enviar la notificación PUSH
+          try {
+            await webpush.sendNotification(userData.pushSubscription, payload);
+            console.log(`✅ Push enviado (${minutesLeft}m) para cita: ${doc.id}`);
+            
+            // Marcar en la BD para evitar duplicados absolutos
+            await db.collection('appointments').doc(doc.id).update({
+              [fieldToUpdate]: true,
+              updatedAt: Date.now()
+            });
+          } catch (err) {
               if (err.statusCode === 410 || err.statusCode === 404) {
                 // La suscripción expiró o el usuario bloqueó notificaciones.
                 console.warn(`⚠️ Suscripción Push expirada/inválida para usuario ${appointment.ownerId}. Eliminando...`);
@@ -129,5 +138,5 @@ function startCronJob() {
     } catch (error) {
       console.error("❌ Error grave en el cron job de Firebase:", error);
     }
-  }, 60000);
+  }, 600000);
 }
