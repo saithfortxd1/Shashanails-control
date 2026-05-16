@@ -120,22 +120,15 @@ function startCronJob() {
               updatedAt: Date.now()
             });
           } catch (err) {
-              if (err.statusCode === 410 || err.statusCode === 404) {
-                // La suscripción expiró o el usuario bloqueó notificaciones.
-                console.warn(`⚠️ Suscripción Push expirada/inválida para usuario ${appointment.ownerId}. Eliminando...`);
-                await db.collection('users').doc(appointment.ownerId).update({
-                  pushSubscription: admin.firestore.FieldValue.delete()
-                });
-              } else {
-                console.error(`❌ Error enviando push para cita ${doc.id}:`, err);
-              }
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              // La suscripción expiró o el usuario bloqueó notificaciones.
+              console.warn(`⚠️ Suscripción Push expirada/inválida para usuario ${appointment.ownerId}. Eliminando...`);
+              await db.collection('users').doc(appointment.ownerId).update({
+                pushSubscription: admin.firestore.FieldValue.delete()
+              });
+            } else {
+              console.error(`❌ Error enviando push para cita ${doc.id}:`, err);
             }
-          } else {
-            console.warn(`⚠️ Cita ${doc.id} ignorada: El usuario no tiene suscripción Push activa.`);
-            // Aún así marcamos como notificada para que no se atasque evaluándola cada minuto
-            await db.collection('appointments').doc(doc.id).update({
-              [fieldToUpdate]: true
-            });
           }
         }
       }
