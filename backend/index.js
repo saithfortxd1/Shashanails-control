@@ -61,15 +61,19 @@ function startCronJob() {
     try {
       const now = Date.now();
       const limitTime = now + (2 * 60 * 60 * 1000); // 2 hours from now
-      // Solo buscar citas que van a ocurrir en las próximas 2 horas para ahorrar cuota de lectura
+      // Solo buscar citas por fecha (rango de 3 horas) para no requerir un índice compuesto
+      // Filtramos el status localmente para no saturar la base de datos
       const snapshot = await db.collection('appointments')
-        .where('status', '==', 'scheduled')
         .where('date', '>=', now - (60 * 60 * 1000)) // Incluir citas que pasaron hace menos de 1 hora
         .where('date', '<=', limitTime)
         .get();
 
       for (const doc of snapshot.docs) {
         const appointment = doc.data();
+        
+        // Filtro local estricto
+        if (appointment.status !== 'scheduled') continue;
+
         const diffInMinutes = (appointment.date - now) / 1000 / 60;
 
         let shouldNotify = false;
