@@ -19,6 +19,7 @@ export interface AppUser {
   email: string | null;
   displayName: string | null;
   ultimoMesPagado: string | null;
+  nextBillingDate?: string | null; // e.g. "2026-06-16"
   subscriptionStatusOverride?: 'auto' | 'Activa' | 'Pendiente' | 'Suspendida';
   pushSubscription?: any;
   createdAt: number;
@@ -60,7 +61,7 @@ export interface Appointment {
   designImageUrls?: string[]; // Multiple images support (up to 3)
   locationType: 'Presencial' | 'Domicilio';
   address: string;
-  status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
+  status: 'scheduled' | 'completed' | 'cancelled' | 'no-show' | 'frozen';
   notified60: boolean;
   notified30: boolean;
   notified15?: boolean;

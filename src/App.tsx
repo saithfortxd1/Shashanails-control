@@ -17,6 +17,23 @@ function getSubscriptionStatus(user: AppUser | null): 'Activa' | 'Pendiente' | '
     return user.subscriptionStatusOverride;
   }
   
+  if (user.nextBillingDate) {
+    const now = new Date();
+    // Reset time to start of day for accurate day comparisons
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // Parse nextBillingDate as local time to avoid timezone issues
+    const [year, month, day] = user.nextBillingDate.split('-');
+    const billingDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
+    const diffDays = differenceInDays(billingDate, today);
+    
+    if (diffDays < 0) return 'Suspendida'; // Ya pasó la fecha de corte
+    if (diffDays <= 2) return 'Pendiente';  // Faltan 2 días o menos (Recordatorio)
+    return 'Activa';
+  }
+
+  // Fallback to legacy logic for users without nextBillingDate
   const now = new Date();
   const cutoffStart = new Date('2026-05-14T00:00:00');
   
@@ -327,6 +344,7 @@ function AgendaView() {
 
   const renderAppointment = (app: Appointment, currentMode?: string) => {
     const isPast = now > app.date; // 0 mins after start, show actions as soon as the appointment time hits
+    const isFrozen = app.status === 'scheduled' && (now - app.date) > 7 * 24 * 60 * 60 * 1000;
     const client = clients.find(c => c.id === app.clientId);
     const pendingAmount = app.price - (app.advancePayment || 0);
 
@@ -355,6 +373,16 @@ function AgendaView() {
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
+            <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider
+              ${isFrozen ? 'bg-blue-100 text-blue-600' :
+                app.status === 'scheduled' ? (isPast ? 'bg-red-100 text-red-600' : 'bg-brand-blush text-brand-fuchsia') : 
+                app.status === 'completed' ? 'bg-green-100 text-green-600' : 
+                'bg-gray-100 text-gray-600'}`}>
+              {isFrozen ? 'Congelada' :
+               app.status === 'scheduled' ? (isPast ? 'Atrasada' : 'Pendiente') : 
+               app.status === 'completed' ? 'Completada' : 
+               'Cancelada'}
+            </div>
             <div className="text-right">
               <div className="font-extrabold text-[14px] text-brand-ink">${formatCurrency(app.price)}</div>
               <div className="text-[10px] opacity-80 text-brand-fuchsia leading-none mt-0.5">{app.locationType}</div>
@@ -382,17 +410,23 @@ function AgendaView() {
             </button>
           </div>
           {isPast && app.status === 'scheduled' && (
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={(e) => { e.stopPropagation(); handleStatusUpdate(app.id, 'completed'); }} className="flex flex-col items-center justify-center bg-green-50 text-green-600 font-bold py-1.5 rounded-lg text-[10px] gap-1 hover:bg-green-100 transition-colors">
-                <CheckCircle className="w-3.5 h-3.5" /> Completar
+            isFrozen ? (
+              <button onClick={(e) => { e.stopPropagation(); setEditingApp(app); }} className="w-full bg-blue-50 text-blue-600 font-bold py-2 rounded-lg text-[11px] transition-colors hover:bg-blue-100 flex items-center justify-center gap-1.5 mt-2">
+                <Calendar className="w-3.5 h-3.5" /> Activar Cita (Cambiar Fecha)
               </button>
-              <button onClick={(e) => { e.stopPropagation(); handleStatusUpdate(app.id, 'cancelled'); }} className="flex flex-col items-center justify-center bg-red-50 text-red-600 font-bold py-1.5 rounded-lg text-[10px] gap-1 hover:bg-red-100 transition-colors">
-                <Trash2 className="w-3.5 h-3.5" /> Cancelar
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); setEditingApp(app); }} className="flex flex-col items-center justify-center bg-brand-blush text-brand-fuchsia font-bold py-1.5 rounded-lg text-[10px] gap-1 hover:bg-brand-blush/80 transition-colors">
-                <Calendar className="w-3.5 h-3.5" /> Aplazar
-              </button>
-            </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={(e) => { e.stopPropagation(); handleStatusUpdate(app.id, 'completed'); }} className="flex flex-col items-center justify-center bg-green-50 text-green-600 font-bold py-1.5 rounded-lg text-[10px] gap-1 hover:bg-green-100 transition-colors">
+                  <CheckCircle className="w-3.5 h-3.5" /> Completar
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); handleStatusUpdate(app.id, 'cancelled'); }} className="flex flex-col items-center justify-center bg-red-50 text-red-600 font-bold py-1.5 rounded-lg text-[10px] gap-1 hover:bg-red-100 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" /> Cancelar
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); setEditingApp(app); }} className="flex flex-col items-center justify-center bg-brand-blush text-brand-fuchsia font-bold py-1.5 rounded-lg text-[10px] gap-1 hover:bg-brand-blush/80 transition-colors">
+                  <Calendar className="w-3.5 h-3.5" /> Aplazar
+                </button>
+              </div>
+            )
           )}
         </div>
       </div>
@@ -448,13 +482,37 @@ function AgendaView() {
           if (scheduled.length === 0) return <p className="text-center text-brand-ink/40 font-bold uppercase tracking-widest text-xs py-10">No hay citas programadas.</p>;
           
           const grouped: Record<string, Appointment[]> = {};
+          const frozenApps: Appointment[] = [];
+          
           scheduled.forEach(app => {
-            const dateStr = format(new Date(app.date), 'yyyy-MM-dd');
-            if (!grouped[dateStr]) grouped[dateStr] = [];
-            grouped[dateStr].push(app);
+            const isFrozen = (now - app.date) > 7 * 24 * 60 * 60 * 1000;
+            if (isFrozen) {
+              frozenApps.push(app);
+            } else {
+              const dateStr = format(new Date(app.date), 'yyyy-MM-dd');
+              if (!grouped[dateStr]) grouped[dateStr] = [];
+              grouped[dateStr].push(app);
+            }
           });
           
-          const sortedDates = Object.keys(grouped).sort();
+          const sortedDates = Object.keys(grouped).sort((a, b) => {
+            const isAToday = isSameDay(new Date(`${a}T12:00:00`), new Date());
+            const isBToday = isSameDay(new Date(`${b}T12:00:00`), new Date());
+            
+            if (isAToday) return -1;
+            if (isBToday) return 1;
+
+            const dateA = new Date(`${a}T12:00:00`).getTime();
+            const dateB = new Date(`${b}T12:00:00`).getTime();
+            
+            const aIsPast = dateA < now;
+            const bIsPast = dateB < now;
+
+            if (!aIsPast && !bIsPast) return dateA - dateB; // Future dates: soonest first
+            if (aIsPast && bIsPast) return dateB - dateA; // Past dates: most recent first
+            if (!aIsPast && bIsPast) return -1; // Future dates before past dates
+            return 1;
+          });
           
           return (
             <div className="space-y-6 relative">
@@ -468,6 +526,17 @@ function AgendaView() {
                   {grouped[date].map(app => renderAppointment(app, mode))}
                 </div>
               ))}
+              
+              {frozenApps.length > 0 && (
+                <div className="space-y-4 pt-6 border-t border-[#eee]">
+                  <div className="text-center mb-4">
+                    <span className="font-bold text-blue-600 text-[12px] uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full">
+                      Citas Congeladas (+7 días)
+                    </span>
+                  </div>
+                  {frozenApps.sort((a,b) => b.date - a.date).map(app => renderAppointment(app, mode))}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -816,13 +885,19 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
     }
     try {
       await deleteDoc(doc(db, 'appointments', app.id));
-      const debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', app.id)));
+      const debtsSnapshot = await getDocs(query(
+        collection(db, 'debts'), 
+        where('ownerId', '==', auth.currentUser!.uid),
+        where('appointmentId', '==', app.id)
+      ));
       for (const d of debtsSnapshot.docs) {
         await deleteDoc(doc(db, 'debts', d.id));
       }
       onClose();
     } catch(err) {
-      handleFirestoreError(err, OperationType.DELETE, 'appointments');
+      console.error(err);
+      alert('Se eliminó la cita, pero hubo un error actualizando la vista. Cerrando...');
+      onClose();
     }
   };
 
@@ -1720,7 +1795,11 @@ function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
             <div className="bg-white p-4 rounded-xl border border-[#eee] flex items-center justify-between shadow-sm">
                 <div>
                   <p className="text-[10px] font-bold uppercase text-brand-ink/40">Vencimiento</p>
-                  <p className="font-bold text-brand-ink text-[14px] capitalize">{formatPaymentDate(userProfile.ultimoMesPagado)}</p>
+                  <p className="font-bold text-brand-ink text-[14px] capitalize">
+                    {userProfile.nextBillingDate 
+                      ? format(new Date(userProfile.nextBillingDate + 'T12:00:00'), "d 'de' MMMM", { locale: es })
+                      : formatPaymentDate(userProfile.ultimoMesPagado)}
+                  </p>
                 </div>
                 <Receipt className="w-6 h-6 text-brand-ink/20" />
             </div>
@@ -1887,6 +1966,18 @@ function AdminView() {
           users.map(u => {
           const status = getSubscriptionStatus(u);
           const isManual = u.subscriptionStatusOverride && u.subscriptionStatusOverride !== 'auto';
+          const handleSetNextBillingDate = async (user: AppUser, dateStr: string) => {
+            try {
+              await updateDoc(doc(db, 'users', user.id), {
+                nextBillingDate: dateStr
+              });
+              alert('Fecha de corte actualizada');
+            } catch (e) {
+              console.error(e);
+              alert('Error al actualizar la fecha');
+            }
+          };
+
           return (
             <div key={u.id} className="bg-white p-5 rounded-[20px] shadow-sm border border-[#eee] flex flex-col gap-3">
               <div className="flex justify-between items-center">
@@ -1902,16 +1993,18 @@ function AdminView() {
                 </div>
               </div>
               
-              <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl">
-                <span className="text-[12px] font-bold text-brand-ink/60 capitalize">
-                  Vence: {formatPaymentDate(u.ultimoMesPagado)}
-                </span>
-                <button 
-                  onClick={() => handleMarkPaid(u)}
-                  className="bg-brand-fuchsia text-white px-3 py-2 rounded-lg text-[12px] font-bold active:scale-95 transition-transform"
-                >
-                  Renovar {format(new Date(), 'MMM', { locale: es })}
-                </button>
+              <div className="flex flex-col gap-2 bg-gray-50 p-3 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-brand-ink/60 capitalize">
+                    Vencimiento Mensual:
+                  </span>
+                  <input 
+                    type="date"
+                    value={u.nextBillingDate || '2026-05-14'}
+                    onChange={(e) => handleSetNextBillingDate(u, e.target.value)}
+                    className="text-[12px] font-bold text-brand-ink bg-white border border-[#eee] rounded-lg px-2 py-1 outline-none focus:border-brand-fuchsia"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-2 mt-1">
