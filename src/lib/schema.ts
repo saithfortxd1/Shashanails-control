@@ -25,6 +25,14 @@ export interface AppUser {
   createdAt: number;
 }
 
+export interface MaintenanceConfig {
+  isActive: boolean;
+  message: string;
+  startDate: string; // "yyyy-MM-ddThh:mm"
+  endDate: string; // "yyyy-MM-ddThh:mm"
+  excludedEmails: string[];
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   // In a real scenario, this gets more verbose auth info
   const errInfo: FirestoreErrorInfo = {

@@ -14,7 +14,8 @@ self.addEventListener('push', function(event) {
       body: data.body,
       icon: '/vite.svg',
       vibrate: [200, 100, 200, 100, 200, 100, 200],
-      requireInteraction: true
+      requireInteraction: true,
+      silent: false
     };
     event.waitUntil(self.registration.showNotification(title, options));
   }

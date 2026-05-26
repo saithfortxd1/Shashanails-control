@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { useClients, useAppointments, useDebts, useFrequentServices, useAppUser, useAllUsers } from './lib/hooks';
-import { Calendar, Users, Settings, Plus, LogOut, Edit2, LogIn, Check, X, MapPin, Receipt, CheckCircle, Trash2, MessageCircle, Upload, Image as ImageIcon, Eye, Shield, Loader2 } from 'lucide-react';
+import { useClients, useAppointments, useDebts, useFrequentServices, useAppUser, useAllUsers, useMaintenanceMode } from './lib/hooks';
+import { Calendar, Users, Settings, Plus, LogOut, Edit2, LogIn, Check, X, MapPin, Receipt, CheckCircle, Trash2, MessageCircle, Upload, Image as ImageIcon, Eye, Shield, Loader2, AlertTriangle } from 'lucide-react';
 import { db, storage } from './lib/firebase';
 import { collection, doc, setDoc, deleteDoc, updateDoc, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -10,6 +10,21 @@ import { Client, Appointment, Debt, handleFirestoreError, OperationType, formatC
 import { format, differenceInDays, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { playNotificationSound, stopNotificationSound } from './lib/sound';
+
+const VAPID_PUBLIC_KEY = 'BDAjzTWwk5Wz4aa93fcaJgCm3_v2gCf1wNajU4KJ5zc1C2srCoW0VEnnGjOH-qWRRlxmXwChAGeOULpnclTMyFc';
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 function getSubscriptionStatus(user: AppUser | null): 'Activa' | 'Pendiente' | 'Suspendida' {
   if (!user) return 'Activa';
@@ -59,9 +74,98 @@ export default function App() {
   const [user, setUser] = useState(auth.currentUser);
   const [tab, setTab] = useState<'agenda' | 'clients' | 'debts' | 'settings' | 'admin'>('agenda');
   const userProfile = useAppUser();
+  const maintenance = useMaintenanceMode();
   const isAdmin = user?.email === 'saith.martinez7@gmail.com';
+  
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [globalPreviewApp, setGlobalPreviewApp] = useState<Appointment | null>(null);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, u => setUser(u));
+    return () => unsub();
+  }, []);
+
+  const handleLogin = async () => {
+    setIsSigningIn(true);
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (error: any) {
+      if (error.code !== 'auth/cancelled-popup-request' && error.code !== 'auth/popup-closed-by-user') {
+        console.error(error);
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen font-body bg-brand-blush flex items-center justify-center p-4">
+        <div className="bg-white rounded-[24px] shadow-[0_20px_40px_rgba(0,0,0,0.05)] border-2 border-brand-gold w-full max-w-sm p-8 space-y-8 text-center ring-1 ring-rose-100">
+          <div>
+            <img src="https://i.ibb.co/SDJT43T8/Captura-de-pantalla-2026-05-04-223430.png" alt="Logo" className="h-20 w-auto mx-auto object-contain mb-6 mix-blend-multiply" />
+            <h1 className="text-[32px] font-display italic text-brand-fuchsia tracking-tight leading-none shadow-sm">Shasha Nails</h1>
+            <p className="text-[12px] uppercase tracking-[2px] text-brand-ink/60 mt-3 font-bold">De Shanya Toro</p>
+          </div>
+          <button 
+            onClick={handleLogin}
+            disabled={isSigningIn}
+            className="w-full flex items-center justify-center gap-3 bg-[#fafafa] border-2 border-[#eee] text-brand-ink py-4 px-6 rounded-xl font-bold hover:bg-white hover:border-brand-gold/30 hover:shadow-md transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSigningIn ? (
+              <Loader2 className="w-5 h-5 animate-spin text-brand-ink" />
+            ) : (
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5 group-hover:scale-110 transition-transform" alt="G" />
+            )}
+            {isSigningIn ? 'Iniciando sesión...' : 'Ingresar con Google'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Evaluar Mantenimiento
+  let isMaintenanceActive = false;
+  let computedMaintMessage = maintenance?.message || "La aplicación se encuentra en mantenimiento.";
+  
+  if (maintenance && !isAdmin) {
+    if (!maintenance.excludedEmails.includes(user.email || '')) {
+      const now = new Date();
+      let activeByDate = false;
+      
+      if (maintenance.endDate) {
+        const end = new Date(maintenance.endDate);
+        if (now < end) {
+          activeByDate = true;
+          computedMaintMessage += `\n\nVolveremos el ${format(end, "d 'de' MMMM 'a las' h:mm a", { locale: es })}.`;
+        }
+      }
+      
+      if (maintenance.isActive || activeByDate) {
+        isMaintenanceActive = true;
+      }
+    }
+  }
+
+  if (isMaintenanceActive) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-brand-blush to-[#fae1e6] flex flex-col font-body h-[100dvh] overflow-hidden items-center justify-center p-4">
+        <div className="bg-white/90 backdrop-blur-md p-8 rounded-[30px] shadow-xl w-full max-w-sm text-center border border-white space-y-6 animate-slide-up">
+          <div className="mx-auto bg-brand-fuchsia/10 w-20 h-20 rounded-full flex items-center justify-center">
+             <AlertTriangle className="w-10 h-10 text-brand-fuchsia" />
+          </div>
+          <h1 className="text-2xl font-black text-brand-ink tracking-tight">Mantenimiento</h1>
+          <p className="text-brand-ink/70 font-medium leading-relaxed whitespace-pre-line">
+            {computedMaintMessage}
+          </p>
+          <button onClick={() => auth.signOut()} className="mt-4 px-6 py-2 bg-[#fafafa] border border-[#eee] rounded-full text-brand-ink/60 text-sm font-bold transition-colors hover:bg-gray-100">
+            Cerrar Sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
 
   useEffect(() => {
     const handleOpenPreview = (e: any) => {
@@ -163,6 +267,47 @@ function NavBtn({ active, icon: Icon, label, onClick }: any) {
 function NotificationEngine() {
   const appointments = useAppointments();
   const userProfile = useAppUser();
+
+  // Passive push notification verification & registration on startup
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const autoRegisterPush = async () => {
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+
+      if (Notification.permission === 'granted') {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          const existingSub = await registration.pushManager.getSubscription();
+          
+          let currentSub = existingSub;
+          if (!existingSub) {
+            currentSub = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+            });
+          }
+
+          if (currentSub) {
+            const subJSON = JSON.parse(JSON.stringify(currentSub));
+            const dbSubJSON = userProfile.pushSubscription;
+            
+            // Check if DB subscription needs update
+            if (!dbSubJSON || dbSubJSON.endpoint !== subJSON.endpoint) {
+              await updateDoc(doc(db, 'users', userProfile.id), {
+                pushSubscription: subJSON
+              });
+              console.log("🔔 Push subscription auto-registered/updated in Firestore.");
+            }
+          }
+        } catch (error) {
+          console.error("Error in passive push subscription auto-registration:", error);
+        }
+      }
+    };
+
+    autoRegisterPush();
+  }, [userProfile]);
 
   useEffect(() => {
     // Request permission once
@@ -280,15 +425,19 @@ function AgendaView() {
 
   const handleStatusUpdate = async (id: string, status: 'completed' | 'no-show' | 'cancelled') => {
     try {
-      await updateDoc(doc(db, 'appointments', id), {
+      updateDoc(doc(db, 'appointments', id), {
         status,
         updatedAt: Date.now()
-      });
+      }).catch(err => console.error("Error updating appointment status:", err));
+
       if (status === 'cancelled' || status === 'no-show') {
-        const debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', id)));
-        for (const d of debtsSnapshot.docs) {
-          await deleteDoc(doc(db, 'debts', d.id));
-        }
+        const cleanDebts = async () => {
+          const debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', id)));
+          for (const d of debtsSnapshot.docs) {
+            await deleteDoc(doc(db, 'debts', d.id));
+          }
+        };
+        cleanDebts().catch(err => console.error("Error cleaning debts:", err));
       }
     } catch(err) {
       handleFirestoreError(err, OperationType.UPDATE, 'appointments');
@@ -298,11 +447,14 @@ function AgendaView() {
   const handleDeleteHistory = async (id: string) => {
     try {
       if (window.confirm('¿Seguro que deseas eliminar esta cita del historial?')) {
-        await deleteDoc(doc(db, 'appointments', id));
-        const debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', id)));
-        for (const d of debtsSnapshot.docs) {
-          await deleteDoc(doc(db, 'debts', d.id));
-        }
+        deleteDoc(doc(db, 'appointments', id)).catch(err => console.error("Error deleting appointment history:", err));
+        const cleanDebts = async () => {
+          const debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', id)));
+          for (const d of debtsSnapshot.docs) {
+            await deleteDoc(doc(db, 'debts', d.id));
+          }
+        };
+        cleanDebts().catch(err => console.error("Error cleaning debts:", err));
       }
     } catch(err) {
       handleFirestoreError(err, OperationType.DELETE, 'appointments');
@@ -791,7 +943,7 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
         return;
       }
 
-      await updateDoc(doc(db, 'appointments', app.id), {
+      updateDoc(doc(db, 'appointments', app.id), {
         date: dateTime,
         service,
         price: parseFloat(price),
@@ -803,73 +955,75 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
         address,
         updatedAt: Date.now(),
         ...(dateTime !== app.date && { notified60: false, notified30: false })
-      });
+      }).catch(err => console.error("Error updating appointment:", err));
 
-      try {
-        const parsedAdvance = parseFloat(advancePayment) || 0;
-        const parsedPrice = parseFloat(price) || 0;
-        const pendingAmount = parsedPrice - parsedAdvance;
-        const isPaidFull = pendingAmount <= 0;
+      const updateDebtAndServices = async () => {
+        try {
+          const parsedAdvance = parseFloat(advancePayment) || 0;
+          const parsedPrice = parseFloat(price) || 0;
+          const pendingAmount = parsedPrice - parsedAdvance;
+          const isPaidFull = pendingAmount <= 0;
 
-        let debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', app.id)));
-        
-        // Fallback para deudas antiguas que no tienen appointmentId
-        if (debtsSnapshot.empty) {
-          const legacyQuery = query(collection(db, 'debts'), 
-            where('clientId', '==', app.clientId), 
-            where('status', '==', 'pending')
-          );
-          const legacySnapshot = await getDocs(legacyQuery);
-          const matchedDoc = legacySnapshot.docs.find(d => 
-            d.data().concept === 'Saldo cita: ' + app.service || 
-            d.data().concept === 'Cita: ' + app.service
-          );
-          if (matchedDoc) {
-             debtsSnapshot = { empty: false, docs: [matchedDoc] } as any;
+          let debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', app.id)));
+          
+          // Fallback para deudas antiguas que no tienen appointmentId
+          if (debtsSnapshot.empty) {
+            const legacyQuery = query(collection(db, 'debts'), 
+              where('clientId', '==', app.clientId), 
+              where('status', '==', 'pending')
+            );
+            const legacySnapshot = await getDocs(legacyQuery);
+            const matchedDoc = legacySnapshot.docs.find(d => 
+              d.data().concept === 'Saldo cita: ' + app.service || 
+              d.data().concept === 'Cita: ' + app.service
+            );
+            if (matchedDoc) {
+               debtsSnapshot = { empty: false, docs: [matchedDoc] } as any;
+            }
           }
+
+          if (!debtsSnapshot.empty) {
+            const debtDoc = debtsSnapshot.docs[0];
+            await updateDoc(doc(db, 'debts', debtDoc.id), {
+              amount: isPaidFull ? parsedPrice : pendingAmount,
+              status: isPaidFull ? 'paid' : 'pending',
+              paidAt: isPaidFull ? Date.now() : null,
+              concept: 'Cita: ' + service,
+              updatedAt: Date.now()
+            });
+          } else {
+            const debtId = doc(collection(db, 'debts')).id;
+            await setDoc(doc(db, 'debts', debtId), {
+              id: debtId,
+              clientId: app.clientId,
+              clientName: app.clientName,
+              concept: 'Cita: ' + service,
+              amount: isPaidFull ? parsedPrice : pendingAmount,
+              status: isPaidFull ? 'paid' : 'pending',
+              ownerId: auth.currentUser!.uid,
+              createdAt: Date.now(),
+              paidAt: isPaidFull ? Date.now() : null,
+              appointmentId: app.id
+            });
+          }
+        } catch (err) {
+          console.error("Error updating debt in background:", err);
         }
 
-        if (!debtsSnapshot.empty) {
-          const debtDoc = debtsSnapshot.docs[0];
-          await updateDoc(doc(db, 'debts', debtDoc.id), {
-            amount: isPaidFull ? parsedPrice : pendingAmount,
-            status: isPaidFull ? 'paid' : 'pending',
-            paidAt: isPaidFull ? Date.now() : null,
-            concept: 'Cita: ' + service,
-            updatedAt: Date.now()
-          });
-        } else {
-          const debtId = doc(collection(db, 'debts')).id;
-          await setDoc(doc(db, 'debts', debtId), {
-            id: debtId,
-            clientId: app.clientId,
-            clientName: app.clientName,
-            concept: 'Cita: ' + service,
-            amount: isPaidFull ? parsedPrice : pendingAmount,
-            status: isPaidFull ? 'paid' : 'pending',
-            ownerId: auth.currentUser!.uid,
-            createdAt: Date.now(),
-            paidAt: isPaidFull ? Date.now() : null,
-            appointmentId: app.id
-          });
+        // Save to frequent services if new
+        try {
+          if (service && !frequentServices.find(s => s.name.toLowerCase() === service.toLowerCase())) {
+            await setDoc(doc(collection(db, 'frequentServices')), {
+              name: service,
+              ownerId: auth.currentUser!.uid
+            });
+          }
+        } catch (err) {
+          console.error("Error saving frequent service:", err);
         }
-      } catch (err) {
-        console.error("Error updating debt:", err);
-      }
+      };
 
-      // Save to frequent services if new
-      try {
-        if (service && !frequentServices.find(s => s.name.toLowerCase() === service.toLowerCase())) {
-          await setDoc(doc(collection(db, 'frequentServices')), {
-            name: service,
-            ownerId: auth.currentUser!.uid
-          });
-        }
-      } catch (err) {
-        console.error("Error saving frequent service:", err);
-      }
-
-      // Remove slow alert, rely on the visual closing of the modal
+      updateDebtAndServices();
       onClose();
     } catch(err) {
       handleFirestoreError(err, OperationType.UPDATE, 'appointments');
@@ -884,15 +1038,24 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
       return;
     }
     try {
-      await deleteDoc(doc(db, 'appointments', app.id));
-      const debtsSnapshot = await getDocs(query(
-        collection(db, 'debts'), 
-        where('ownerId', '==', auth.currentUser!.uid),
-        where('appointmentId', '==', app.id)
-      ));
-      for (const d of debtsSnapshot.docs) {
-        await deleteDoc(doc(db, 'debts', d.id));
-      }
+      deleteDoc(doc(db, 'appointments', app.id)).catch(err => console.error("Error deleting appointment:", err));
+      
+      const cleanDebts = async () => {
+        try {
+          const debtsSnapshot = await getDocs(query(
+            collection(db, 'debts'), 
+            where('ownerId', '==', auth.currentUser!.uid),
+            where('appointmentId', '==', app.id)
+          ));
+          for (const d of debtsSnapshot.docs) {
+            await deleteDoc(doc(db, 'debts', d.id));
+          }
+        } catch (err) {
+          console.error("Error clearing debts in background:", err);
+        }
+      };
+      
+      cleanDebts();
       onClose();
     } catch(err) {
       console.error(err);
@@ -1125,39 +1288,41 @@ function AppointmentModal({ onClose, clients }: any) {
     };
     
     try {
-      await setDoc(doc(db, 'appointments', newApp.id), newApp);
+      setDoc(doc(db, 'appointments', newApp.id), newApp).catch(err => console.error("Error scheduling appointment:", err));
       
-      try {
-        const parsedAdvance = parseFloat(advancePayment) || 0;
-        const parsedPrice = parseFloat(price) || 0;
-        const pendingAmount = parsedPrice - parsedAdvance;
-        const isPaidFull = pendingAmount <= 0;
-        
-        const debtId = doc(collection(db, 'debts')).id;
-        await setDoc(doc(db, 'debts', debtId), {
-          id: debtId,
-          clientId,
-          clientName,
-          concept: 'Cita: ' + service,
-          amount: isPaidFull ? parsedPrice : pendingAmount,
-          status: isPaidFull ? 'paid' : 'pending',
-          ownerId: auth.currentUser!.uid,
-          createdAt: Date.now(),
-          paidAt: isPaidFull ? Date.now() : null,
-          appointmentId: newApp.id
-        });
-      } catch (subErr) {
-        console.error("Error with secondary operations:", subErr);
-      }
+      const createDebtAndServices = async () => {
+        try {
+          const parsedAdvance = parseFloat(advancePayment) || 0;
+          const parsedPrice = parseFloat(price) || 0;
+          const pendingAmount = parsedPrice - parsedAdvance;
+          const isPaidFull = pendingAmount <= 0;
+          
+          const debtId = doc(collection(db, 'debts')).id;
+          await setDoc(doc(db, 'debts', debtId), {
+            id: debtId,
+            clientId,
+            clientName,
+            concept: 'Cita: ' + service,
+            amount: isPaidFull ? parsedPrice : pendingAmount,
+            status: isPaidFull ? 'paid' : 'pending',
+            ownerId: auth.currentUser!.uid,
+            createdAt: Date.now(),
+            paidAt: isPaidFull ? Date.now() : null,
+            appointmentId: newApp.id
+          });
+        } catch (subErr) {
+          console.error("Error with secondary operations:", subErr);
+        }
 
-      // Fire and forget secondary operations to speed up UI
-      if (service && !frequentServices.find(s => s.name.toLowerCase() === service.toLowerCase())) {
-        setDoc(doc(collection(db, 'frequentServices')), {
-          name: service,
-          ownerId: auth.currentUser!.uid
-        }).catch(err => console.error("Error saving freq service:", err));
-      }
+        if (service && !frequentServices.find(s => s.name.toLowerCase() === service.toLowerCase())) {
+          setDoc(doc(collection(db, 'frequentServices')), {
+            name: service,
+            ownerId: auth.currentUser!.uid
+          }).catch(err => console.error("Error saving freq service:", err));
+        }
+      };
 
+      createDebtAndServices();
       onClose();
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'appointments');
@@ -1439,7 +1604,7 @@ function ClientModal({ onClose }: any) {
       updatedAt: Date.now()
     };
     try {
-      await setDoc(doc(db, 'clients', newClient.id), newClient);
+      setDoc(doc(db, 'clients', newClient.id), newClient).catch(err => console.error("Error creating client:", err));
       onClose();
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'clients');
@@ -1483,11 +1648,11 @@ function DebtsView() {
   const handleMarkPaid = async (e: React.MouseEvent, debt: Debt) => {
     e.stopPropagation();
     try {
-      await updateDoc(doc(db, 'debts', debt.id), {
+      updateDoc(doc(db, 'debts', debt.id), {
         status: 'paid',
         paidAt: Date.now(),
-        updatedAt: Date.now() // added just in case
-      });
+        updatedAt: Date.now()
+      }).catch(err => console.error("Error marking debt as paid:", err));
     } catch(err) {
       handleFirestoreError(err, OperationType.UPDATE, 'debts');
     }
@@ -1536,7 +1701,7 @@ function DebtsView() {
                       onClick={(e) => handleMarkPaid(e, d)}
                       className="mt-2 text-[10px] font-bold uppercase tracking-wider bg-[#fafafa] border border-[#eee] px-3 py-1 rounded-lg text-brand-ink hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-1 active:scale-95"
                     >
-                      <CheckCircle className="w-3 h-3" />
+                      <CheckCircle className="w-3.5 h-3.5" />
                       Pagado
                     </div>
                   )}
@@ -1586,7 +1751,7 @@ function DebtModal({ onClose, clients, editingDebt = null }: any) {
       return;
     }
     try {
-      await deleteDoc(doc(db, 'debts', editingDebt.id));
+      deleteDoc(doc(db, 'debts', editingDebt.id)).catch(err => console.error("Error deleting debt:", err));
       onClose();
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, 'debts');
@@ -1612,17 +1777,17 @@ function DebtModal({ onClose, clients, editingDebt = null }: any) {
     
     try {
       if (editingDebt) {
-        await updateDoc(doc(db, 'debts', editingDebt.id), {
+        updateDoc(doc(db, 'debts', editingDebt.id), {
           ...debtData,
           updatedAt: Date.now()
-        });
+        }).catch(err => console.error("Error updating debt:", err));
       } else {
         const newDebt = {
           ...debtData,
           id: doc(collection(db, 'debts')).id,
           createdAt: Date.now()
         };
-        await setDoc(doc(db, 'debts', newDebt.id), newDebt);
+        setDoc(doc(db, 'debts', newDebt.id), newDebt).catch(err => console.error("Error saving debt:", err));
       }
       onClose();
     } catch (err) {
@@ -1717,21 +1882,6 @@ function DebtModal({ onClose, clients, editingDebt = null }: any) {
   );
 }
 
-const VAPID_PUBLIC_KEY = 'BDAjzTWwk5Wz4aa93fcaJgCm3_v2gCf1wNajU4KJ5zc1C2srCoW0VEnnGjOH-qWRRlxmXwChAGeOULpnclTMyFc';
-
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/\-/g, '+')
-    .replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
 function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
   const [alertMsg, setAlertMsg] = useState('');
 
@@ -1742,7 +1892,6 @@ function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
     }
     const p = await Notification.requestPermission();
     if (p === 'granted') {
-      setAlertMsg("¡Permisos listos!");
       if ('serviceWorker' in navigator && userProfile) {
         try {
           const registration = await navigator.serviceWorker.ready;
@@ -1755,15 +1904,18 @@ function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
             await updateDoc(doc(db, 'users', userProfile.id), {
               pushSubscription: JSON.parse(JSON.stringify(newSub))
             });
-            setAlertMsg("¡Suscrito para notificaciones push en segundo plano!");
           } else {
             await updateDoc(doc(db, 'users', userProfile.id), {
               pushSubscription: JSON.parse(JSON.stringify(existingSub))
             });
           }
+          setAlertMsg(`Suscrito a las notificaciones como: ${userProfile.displayName || userProfile.email}`);
         } catch (e) {
           console.error("Error subscribiendo a push:", e);
+          setAlertMsg("Error al suscribirse");
         }
+      } else {
+        setAlertMsg("¡Permisos listos!");
       }
     } else {
       setAlertMsg('Permisos: ' + p);
@@ -1774,6 +1926,26 @@ function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
   return (
     <div className="bg-brand-glass backdrop-blur-[10px] rounded-[24px] p-6 border border-white flex flex-col space-y-6 shadow-sm">
       <h2 className="text-[20px] font-bold text-brand-ink">Ajustes</h2>
+
+      {/* Estado de Notificaciones Push */}
+      {userProfile && (
+        <div className="bg-[#fafafa] rounded-[16px] p-4 border border-[#eee] flex items-center justify-between shadow-sm">
+          <div>
+            <p className="text-[10px] font-bold uppercase text-brand-ink/40">Notificaciones Push</p>
+            <p className="font-bold text-brand-ink text-[14px]">Estado del Dispositivo</p>
+          </div>
+          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-[#eee] shadow-sm">
+            <div className={`w-2 h-2 rounded-full ${
+              (Notification.permission === 'granted' && userProfile.pushSubscription) 
+                ? 'bg-green-500 animate-pulse' 
+                : 'bg-red-500'
+            }`} />
+            <span className="text-[10px] font-bold text-brand-ink uppercase">
+              {(Notification.permission === 'granted' && userProfile.pushSubscription) ? 'Suscrito' : 'No Suscrito'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Suscripcion */}
       {userProfile && userProfile.email !== 'saith.martinez7@gmail.com' && (() => {
@@ -1893,21 +2065,40 @@ function SubscriptionWhatsAppBtn({ isPrimary = false }: { isPrimary?: boolean })
 
 function AdminView() {
   const users = useAllUsers().filter(u => u.email !== 'saith.martinez7@gmail.com');
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const maintenance = useMaintenanceMode();
+  
+  const [maintActive, setMaintActive] = useState(false);
+  const [maintMessage, setMaintMessage] = useState('La aplicación se encuentra en mantenimiento.');
+  const [maintEnd, setMaintEnd] = useState('');
+  const [maintExcluded, setMaintExcluded] = useState<string>('');
 
   useEffect(() => {
-    const unsubMaint = onSnapshot(doc(db, 'settings', 'maintenance'), (snapshot) => {
-      if (snapshot.exists()) setMaintenanceMode(snapshot.data().active);
-    });
-    return () => unsubMaint();
-  }, []);
+    if (maintenance) {
+      setMaintActive(maintenance.isActive);
+      setMaintMessage(maintenance.message);
+      setMaintEnd(maintenance.endDate);
+      setMaintExcluded(maintenance.excludedEmails.join(', '));
+    }
+  }, [maintenance]);
 
-  const toggleMaintenance = async () => {
+  const saveMaintenance = async () => {
     try {
-      await setDoc(doc(db, 'settings', 'maintenance'), { active: !maintenanceMode });
+      const excludedArray = maintExcluded.split(',').map(e => e.trim()).filter(e => e);
+      setDoc(doc(db, 'settings', 'maintenance'), {
+        isActive: maintActive,
+        message: maintMessage,
+        startDate: '', // Ya no usamos start
+        endDate: maintEnd,
+        excludedEmails: excludedArray
+      }).then(() => {
+        alert('Configuración de mantenimiento guardada exitosamente.');
+      }).catch(e => {
+        console.error(e);
+        alert('Error guardando mantenimiento');
+      });
     } catch (e) {
       console.error(e);
-      alert('Error cambiando estado de mantenimiento');
+      alert('Error guardando mantenimiento');
     }
   };
   
@@ -1915,11 +2106,15 @@ function AdminView() {
     const currentMonthStr = format(new Date(), 'yyyy-MM');
     if (window.confirm(`¿Marcar mes de ${format(new Date(), 'MMMM', { locale: es })} como pagado para ${user.email}?`)) {
       try {
-        await updateDoc(doc(db, 'users', user.id), {
+        updateDoc(doc(db, 'users', user.id), {
           ultimoMesPagado: currentMonthStr,
           subscriptionStatusOverride: 'auto'
+        }).then(() => {
+          alert('Pago actualizado correctamente.');
+        }).catch(e => {
+          console.error(e);
+          alert('Error al actualizar');
         });
-        alert('Pago actualizado correctamente.');
       } catch (e) {
         console.error(e);
         alert('Error al actualizar');
@@ -1929,8 +2124,11 @@ function AdminView() {
 
   const handleSetStatus = async (user: AppUser, statusOverride: 'auto' | 'Activa' | 'Pendiente' | 'Suspendida') => {
     try {
-      await updateDoc(doc(db, 'users', user.id), {
+      updateDoc(doc(db, 'users', user.id), {
         subscriptionStatusOverride: statusOverride
+      }).catch(e => {
+        console.error(e);
+        alert('Error al cambiar estado');
       });
     } catch (e) {
       console.error(e);
@@ -1938,21 +2136,83 @@ function AdminView() {
     }
   };
 
+  const handleCheckboxChange = (email: string, checked: boolean) => {
+    let list = maintExcluded.split(',').map(e => e.trim()).filter(e => e);
+    if (checked) {
+      if (!list.includes(email)) list.push(email);
+    } else {
+      list = list.filter(e => e !== email);
+    }
+    setMaintExcluded(list.join(', '));
+  };
+
   return (
     <div className="bg-brand-glass backdrop-blur-[10px] rounded-[24px] p-6 border border-white flex flex-col space-y-6 shadow-sm mb-10">
       <h2 className="text-[20px] font-bold text-brand-ink">Panel de Administrador</h2>
       
       <div className="space-y-4">
-        <div className="bg-[#fafafa] rounded-[16px] p-6 border border-[#eee] mb-6 flex items-center justify-between">
+        <div className="bg-[#fafafa] rounded-[16px] p-6 border border-[#eee] mb-6 space-y-4">
           <div>
             <h3 className="font-bold text-brand-ink text-lg">Modo Mantenimiento</h3>
-            <p className="text-[12px] text-brand-ink/60 mt-1">Si activas esto, todos los usuarios verán una pantalla de mantenimiento y no podrán usar la app.</p>
+            <p className="text-[12px] text-brand-ink/60 mt-1">Configura el mantenimiento global. Tú (saith.martinez7) nunca serás bloqueado.</p>
           </div>
-          <button 
-            onClick={toggleMaintenance}
-            className={`px-4 py-2 rounded-xl font-bold transition-all shadow-sm ${maintenanceMode ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-white text-brand-ink border border-[#eee]'}`}
-          >
-            {maintenanceMode ? 'Desactivar' : 'Activar'}
+          
+          <div className="flex items-center justify-between bg-white p-3 border border-[#eee] rounded-xl">
+            <span className="font-bold text-[14px] text-brand-ink">Activar Manualmente:</span>
+            <button 
+              onClick={() => setMaintActive(!maintActive)}
+              className={`px-4 py-2 rounded-xl font-bold transition-all shadow-sm ${maintActive ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-[#fafafa] text-brand-ink border border-[#eee]'}`}
+            >
+              {maintActive ? 'ACTIVADO' : 'Desactivado'}
+            </button>
+          </div>
+
+          <div>
+            <label className="text-[12px] font-bold text-brand-ink/60 mb-1 block">Finalización Automática (Opcional):</label>
+            <p className="text-[10px] text-brand-ink/50 mb-2 leading-tight">Si pones una fecha aquí, el mantenimiento se activará solo, y el mensaje calculará el tiempo restante automáticamente mostrando "Volveremos el..."</p>
+            <input 
+              type="datetime-local" 
+              value={maintEnd}
+              onChange={(e) => setMaintEnd(e.target.value)}
+              className="w-full px-3 py-3 border border-[#eee] rounded-xl text-sm bg-white outline-none focus:border-brand-fuchsia"
+            />
+          </div>
+
+          <div>
+            <label className="text-[12px] font-bold text-brand-ink/60">Mensaje predeterminado:</label>
+            <textarea 
+              value={maintMessage}
+              onChange={(e) => setMaintMessage(e.target.value)}
+              className="w-full px-4 py-3 border border-[#eee] rounded-xl text-sm bg-white mt-1 h-16 resize-none outline-none focus:border-brand-fuchsia"
+            />
+          </div>
+
+          <div>
+            <label className="text-[12px] font-bold text-brand-ink/60 mb-2 block">Usuarios excluidos (Pruebas):</label>
+            <p className="text-[10px] text-brand-ink/50 mb-2 leading-tight">Selecciona los usuarios que podrán entrar a la app aunque esté en mantenimiento.</p>
+            <div className="space-y-2 max-h-40 overflow-y-auto bg-white p-3 rounded-xl border border-[#eee]">
+              {users.map(u => {
+                const isChecked = maintExcluded.split(',').map(e => e.trim()).includes(u.email || '');
+                return (
+                  <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-[#fafafa] rounded-lg cursor-pointer transition-colors border border-transparent hover:border-[#eee]">
+                    <input 
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => handleCheckboxChange(u.email || '', e.target.checked)}
+                      className="w-4 h-4 text-brand-fuchsia rounded border-gray-300 focus:ring-brand-fuchsia"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-brand-ink">{u.displayName || 'Sin nombre'}</span>
+                      <span className="text-[10px] text-brand-ink/50">{u.email}</span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <button onClick={saveMaintenance} className="w-full py-4 bg-brand-ink text-white rounded-xl font-bold mt-2 hover:bg-brand-ink/90 transition-colors shadow-lg">
+            Guardar Configuración de Mantenimiento
           </button>
         </div>
 
@@ -1968,10 +2228,14 @@ function AdminView() {
           const isManual = u.subscriptionStatusOverride && u.subscriptionStatusOverride !== 'auto';
           const handleSetNextBillingDate = async (user: AppUser, dateStr: string) => {
             try {
-              await updateDoc(doc(db, 'users', user.id), {
+              updateDoc(doc(db, 'users', user.id), {
                 nextBillingDate: dateStr
+              }).then(() => {
+                alert('Fecha de corte actualizada');
+              }).catch(e => {
+                console.error(e);
+                alert('Error al actualizar la fecha');
               });
-              alert('Fecha de corte actualizada');
             } catch (e) {
               console.error(e);
               alert('Error al actualizar la fecha');
