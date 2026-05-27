@@ -158,9 +158,11 @@ export function useAppointments() {
         setAppointments([]);
         return;
       }
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const q = query(
         collection(db, 'appointments'), 
-        where("ownerId", "==", user.uid)
+        where("ownerId", "==", user.uid),
+        where("date", ">=", thirtyDaysAgo)
       );
       unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
@@ -196,9 +198,11 @@ export function useDebts() {
         setDebts([]);
         return;
       }
+      const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
       const q = query(
         collection(db, 'debts'), 
-        where("ownerId", "==", user.uid)
+        where("ownerId", "==", user.uid),
+        where("createdAt", ">=", sixtyDaysAgo)
       );
       unsub = onSnapshot(q, (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Debt));
