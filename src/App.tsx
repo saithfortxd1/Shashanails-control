@@ -85,6 +85,15 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const handleOpenPreview = (e: any) => {
+      setTab('agenda');
+      setGlobalPreviewApp(e.detail);
+    };
+    window.addEventListener('open-preview', handleOpenPreview);
+    return () => window.removeEventListener('open-preview', handleOpenPreview);
+  }, []);
+
   const handleLogin = async () => {
     setIsSigningIn(true);
     try {
@@ -129,7 +138,7 @@ export default function App() {
   let computedMaintMessage = maintenance?.message || "La aplicación se encuentra en mantenimiento.";
   
   if (maintenance && !isAdmin) {
-    if (!maintenance.excludedEmails.includes(user.email || '')) {
+    if (!(maintenance.excludedEmails || []).includes(user.email || '')) {
       const now = new Date();
       let activeByDate = false;
       
@@ -166,19 +175,6 @@ export default function App() {
     );
   }
 
-
-  useEffect(() => {
-    const handleOpenPreview = (e: any) => {
-      setTab('agenda');
-      setGlobalPreviewApp(e.detail);
-    };
-    window.addEventListener('open-preview', handleOpenPreview);
-    return () => window.removeEventListener('open-preview', handleOpenPreview);
-  }, []);
-
-  useEffect(() => {
-    return onAuthStateChanged(auth, setUser);
-  }, []);
 
   const handleSignIn = async () => {
     if (isSigningIn) return;
@@ -2077,7 +2073,7 @@ function AdminView() {
       setMaintActive(maintenance.isActive);
       setMaintMessage(maintenance.message);
       setMaintEnd(maintenance.endDate);
-      setMaintExcluded(maintenance.excludedEmails.join(', '));
+      setMaintExcluded((maintenance.excludedEmails || []).join(', '));
     }
   }, [maintenance]);
 

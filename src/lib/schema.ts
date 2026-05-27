@@ -42,7 +42,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // Eliminamos el throw new Error para evitar que la aplicación se congele o muestre pantalla en blanco
+  // throw new Error(JSON.stringify(errInfo));
 }
 
 export interface Client {
