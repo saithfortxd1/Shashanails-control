@@ -1869,14 +1869,6 @@ function DebtModal({ onClose, clients, editingDebt = null }: any) {
   );
 }
 
-function formatPaymentDate(monthStr?: string) {
-  if (!monthStr) return "14 de cada mes";
-  const [year, month] = monthStr.split('-');
-  // If paid for e.g. 2024-05, the next payment is June 14th
-  const date = new Date(parseInt(year), parseInt(month), 14);
-  return format(date, "d 'de' MMMM", { locale: es });
-}
-
 function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
   const [alertMsg, setAlertMsg] = useState('');
 
@@ -1931,12 +1923,12 @@ function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
           </div>
           <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-[#eee] shadow-sm">
             <div className={`w-2 h-2 rounded-full ${
-              (Notification.permission === 'granted' && userProfile.pushSubscription) 
+              (('Notification' in window) && Notification.permission === 'granted' && userProfile.pushSubscription) 
                 ? 'bg-green-500 animate-pulse' 
                 : 'bg-red-500'
             }`} />
             <span className="text-[10px] font-bold text-brand-ink uppercase">
-              {(Notification.permission === 'granted' && userProfile.pushSubscription) ? 'Suscrito' : 'No Suscrito'}
+              {(('Notification' in window) && Notification.permission === 'granted' && userProfile.pushSubscription) ? 'Suscrito' : 'No Suscrito'}
             </span>
           </div>
         </div>
