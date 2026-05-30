@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from './lib/firebase';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, getRedirectResult } from 'firebase/auth';
 import { useClients, useAppointments, useDebts, useFrequentServices, useAppUser, useAllUsers, useMaintenanceMode } from './lib/hooks';
 import { Calendar, Users, Settings, Plus, LogOut, Edit2, LogIn, Check, X, MapPin, Receipt, CheckCircle, Trash2, MessageCircle, Upload, Image as ImageIcon, Eye, Shield, Loader2, AlertTriangle } from 'lucide-react';
 import { db, storage } from './lib/firebase';
@@ -81,6 +81,13 @@ export default function App() {
   const [globalPreviewApp, setGlobalPreviewApp] = useState<Appointment | null>(null);
 
   useEffect(() => {
+    // Catch Safari PWA Firebase bug
+    getRedirectResult(auth).catch((error) => {
+      if (error.message && error.message.includes('missing initial state')) {
+        alert("⚠️ Error de Safari (iPhone) detectado:\n\nPara iniciar sesión, ve a los Ajustes de tu iPhone > Safari > Privacidad y desactiva 'Prevenir rastreo entre sitios' (o activa Permitir cookies de terceros).\n\nSi no funciona, usa la app directamente desde el navegador Safari en lugar del ícono de la pantalla de inicio.");
+      }
+    });
+
     const unsub = onAuthStateChanged(auth, u => setUser(u));
     return () => unsub();
   }, []);
@@ -1860,6 +1867,14 @@ function DebtModal({ onClose, clients, editingDebt = null }: any) {
       </div>
     </div>
   );
+}
+
+function formatPaymentDate(monthStr?: string) {
+  if (!monthStr) return "14 de cada mes";
+  const [year, month] = monthStr.split('-');
+  // If paid for e.g. 2024-05, the next payment is June 14th
+  const date = new Date(parseInt(year), parseInt(month), 14);
+  return format(date, "d 'de' MMMM", { locale: es });
 }
 
 function SettingsView({ userProfile }: { userProfile: AppUser | null }) {
