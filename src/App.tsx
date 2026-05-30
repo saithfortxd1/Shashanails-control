@@ -871,6 +871,7 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
   
   const appointments = useAppointments();
   const frequentServices = useFrequentServices();
+  const debts = useDebts();
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -960,27 +961,19 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
           const pendingAmount = parsedPrice - parsedAdvance;
           const isPaidFull = pendingAmount <= 0;
 
-          let debtsSnapshot = await getDocs(query(collection(db, 'debts'), where('appointmentId', '==', app.id)));
+          let debtDoc = debts.find(d => d.appointmentId === app.id);
           
           // Fallback para deudas antiguas que no tienen appointmentId
-          if (debtsSnapshot.empty) {
-            const legacyQuery = query(collection(db, 'debts'), 
-              where('clientId', '==', app.clientId), 
-              where('status', '==', 'pending')
+          if (!debtDoc) {
+            debtDoc = debts.find(d => 
+              d.clientId === app.clientId && 
+              d.status === 'pending' && 
+              (d.concept === 'Saldo cita: ' + app.service || d.concept === 'Cita: ' + app.service)
             );
-            const legacySnapshot = await getDocs(legacyQuery);
-            const matchedDoc = legacySnapshot.docs.find(d => 
-              d.data().concept === 'Saldo cita: ' + app.service || 
-              d.data().concept === 'Cita: ' + app.service
-            );
-            if (matchedDoc) {
-               debtsSnapshot = { empty: false, docs: [matchedDoc] } as any;
-            }
           }
 
-          if (!debtsSnapshot.empty) {
-            const debtDoc = debtsSnapshot.docs[0];
-            await updateDoc(doc(db, 'debts', debtDoc.id), {
+          if (debtDoc) {
+            updateDoc(doc(db, 'debts', debtDoc.id), {
               amount: isPaidFull ? parsedPrice : pendingAmount,
               status: isPaidFull ? 'paid' : 'pending',
               paidAt: isPaidFull ? Date.now() : null,
@@ -989,7 +982,7 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
             });
           } else {
             const debtId = doc(collection(db, 'debts')).id;
-            await setDoc(doc(db, 'debts', debtId), {
+            setDoc(doc(db, 'debts', debtId), {
               id: debtId,
               clientId: app.clientId,
               clientName: app.clientName,
@@ -1036,19 +1029,10 @@ function AppointmentEditModal({ app, onClose }: { app: Appointment; onClose: () 
     try {
       deleteDoc(doc(db, 'appointments', app.id)).catch(err => console.error("Error deleting appointment:", err));
       
-      const cleanDebts = async () => {
-        try {
-          const debtsSnapshot = await getDocs(query(
-            collection(db, 'debts'), 
-            where('ownerId', '==', auth.currentUser!.uid),
-            where('appointmentId', '==', app.id)
-          ));
-          for (const d of debtsSnapshot.docs) {
-            await deleteDoc(doc(db, 'debts', d.id));
-          }
-        } catch (err) {
-          console.error("Error clearing debts in background:", err);
-        }
+      const cleanDebts = () => {
+        debts.filter(d => d.appointmentId === app.id).forEach(d => {
+          deleteDoc(doc(db, 'debts', d.id));
+        });
       };
       
       cleanDebts();
@@ -2142,9 +2126,55 @@ function AdminView() {
     setMaintExcluded(list.join(', '));
   };
 
+  const [quotaStatus, setQuotaStatus] = useState<'idle' | 'checking' | 'ok' | 'exceeded'>('idle');
+
+  const checkQuota = async () => {
+    setQuotaStatus('checking');
+    try {
+      // Petición de prueba para forzar un error de Cuota si está excedida.
+      // Firebase devolverá error de permisos si hay cuota, lo cual es "ok" (llegó al servidor).
+      // Si la cuota está excedida, devolverá "resource-exhausted".
+      const { getDocs, query, collection, limit } = await import('firebase/firestore');
+      await getDocs(query(collection(db, 'quota_test'), limit(1)));
+      setQuotaStatus('ok');
+    } catch (e: any) {
+      if (e.message?.includes('Quota') || e.code === 'resource-exhausted') {
+        setQuotaStatus('exceeded');
+      } else {
+        setQuotaStatus('ok'); // Error de permisos significa que Firebase sí respondió (hay cuota)
+      }
+    }
+  };
+
   return (
     <div className="bg-brand-glass backdrop-blur-[10px] rounded-[24px] p-6 border border-white flex flex-col space-y-6 shadow-sm mb-10">
       <h2 className="text-[20px] font-bold text-brand-ink">Panel de Administrador</h2>
+
+      <div className="bg-[#fafafa] rounded-[16px] p-6 border border-[#eee] mb-2 space-y-4">
+        <div>
+          <h3 className="font-bold text-brand-ink text-lg">Estado de la Cuota (Manual)</h3>
+          <p className="text-[12px] text-brand-ink/60 mt-1">
+            Google no permite ver el porcentaje exacto (ej. 66%) desde la aplicación sin una API paga. 
+            Este botón enviará un pulso al servidor para decirte si está al 100% (Excedida) o si aún tienes cuota disponible.
+          </p>
+        </div>
+        
+        <div className="flex items-center justify-between bg-white p-3 border border-[#eee] rounded-xl">
+          <span className="font-bold text-[14px] text-brand-ink">Cuota Actual:</span>
+          {quotaStatus === 'idle' && <span className="text-gray-400 font-bold text-sm">Sin verificar</span>}
+          {quotaStatus === 'checking' && <span className="text-blue-500 font-bold text-sm animate-pulse">Verificando...</span>}
+          {quotaStatus === 'ok' && <span className="text-green-600 font-bold text-sm">✅ Disponible</span>}
+          {quotaStatus === 'exceeded' && <span className="text-red-600 font-bold text-sm">❌ 100% Excedida</span>}
+        </div>
+        
+        <button 
+          onClick={checkQuota}
+          disabled={quotaStatus === 'checking'}
+          className="w-full py-3 bg-brand-ink text-white rounded-xl font-bold text-sm hover:bg-brand-fuchsia transition-all"
+        >
+          {quotaStatus === 'checking' ? 'Enviando pulso...' : 'Verificar Cuota Ahora'}
+        </button>
+      </div>
       
       <div className="space-y-4">
         <div className="bg-[#fafafa] rounded-[16px] p-6 border border-[#eee] mb-6 space-y-4">
