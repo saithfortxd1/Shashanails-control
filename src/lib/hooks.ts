@@ -161,12 +161,12 @@ export function useAppointments() {
       const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const q = query(
         collection(db, 'appointments'),
-        where("ownerId", "==", user.uid)
+        where("ownerId", "==", user.uid),
+        where("date", ">=", thirtyDaysAgo)
       );
       unsub = onSnapshot(q, (snap) => {
         const data = snap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() } as Appointment))
-          .filter(app => app.date >= thirtyDaysAgo);
+          .map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
         data.sort((a, b) => a.date - b.date);
         setAppointments(data);
       }, (err) => handleFirestoreError(err, OperationType.LIST, 'appointments'));
@@ -202,12 +202,12 @@ export function useDebts() {
       const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
       const q = query(
         collection(db, 'debts'),
-        where("ownerId", "==", user.uid)
+        where("ownerId", "==", user.uid),
+        where("createdAt", ">=", sixtyDaysAgo)
       );
       unsub = onSnapshot(q, (snap) => {
         const data = snap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() } as Debt))
-          .filter(debt => debt.createdAt >= sixtyDaysAgo);
+          .map(doc => ({ id: doc.id, ...doc.data() } as Debt));
         data.sort((a, b) => b.createdAt - a.createdAt);
         setDebts(data);
       }, (err) => handleFirestoreError(err, OperationType.LIST, 'debts'));
